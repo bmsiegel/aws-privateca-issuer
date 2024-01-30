@@ -30,7 +30,7 @@ jobs:
           VPC_ID=$(aws ec2 describe-vpcs --filters 'Name=tag-key,Values=GithubActionsTesting' --query 'Vpcs[0].VpcId' --output text)
           SUBNET_ID=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag-key,Values=GithubActionsTesting"  --query 'Subnets[0].SubnetId' --output text)
           SG_ID=$(aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag-key,Values=GithubActionsTesting" --query 'SecurityGroups[0].GroupId' --output text)
-          AMI=$(aws ssm get-parameter --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.1-x86_64 --query 'Parameter.Value' --output text)
+          AMI=$(aws ssm get-parameter --name /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64 --query 'Parameter.Value' --output text)
           echo AWS_REGION=$AWS_REGION >> $GITHUB_ENV
           echo SUBNET_ID=$SUBNET_ID >> $GITHUB_ENV
           echo SG_ID=$SG_ID >> $GITHUB_ENV
