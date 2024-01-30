@@ -51,7 +51,7 @@ jobs:
             [
               {"Key": "Name", "Value": "ec2-github-runner"},
               {"Key": "GitHubRepository", "Value": "${{ github.repository }}"}
-            ],
+            ]
           pre-runner-script: |
             sudo yum install libicu -y
 
