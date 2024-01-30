@@ -37,7 +37,7 @@ jobs:
           echo AMI=$AMI >> $GITHUB_ENV
       - name: Start EC2 runner
         id: start-ec2-runner
-        uses: divyansh-gupta/ec2-github-runner@82c9d554a7e7946be1b2003eaac45af59c9f78fd
+        uses: bmsiegel/ec2-github-runner@374372e03fba665ac64792b87b03ae2b7d2e97b4
         with:
           mode: start
           github-token: GithubToken-brsiegel-us-east-1
