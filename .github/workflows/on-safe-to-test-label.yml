@@ -53,7 +53,7 @@ jobs:
               {"Key": "GitHubRepository", "Value": "${{ github.repository }}"}
             ]
           pre-runner-script: |
-            sudo yum install -y docker git jq libicu
+            sudo yum install docker git jq libicu -y
             sudo yum groupinstall "Development Tools" -y
             sudo service docker start
 
