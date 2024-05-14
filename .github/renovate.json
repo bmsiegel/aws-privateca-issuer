@@ -26,10 +26,6 @@
         "golang",
         "go"
       ],
-      "matchUpdateTypes": [
-        "minor",
-        "major"
-      ],
       "groupName": "golang",
       "groupSlug": "golang-update"
     },
