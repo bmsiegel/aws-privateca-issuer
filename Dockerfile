@@ -1,9 +1,11 @@
 # Build the manager binary
-FROM golang:1.22 as builder
+FROM --platform=${BUILDPLATFORM:-linux/amd64} golang:1.22 as builder
 WORKDIR /workspace
 
-ARG TARGETARCH=amd64
-ARG TARGETOS=linux
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+ARG TARGETARCH
+ARG TARGETOS
 
 ENV GOPROXY=direct
 # Copy the Go Modules manifests
@@ -38,7 +40,7 @@ RUN VERSION=$pkg_version && \
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/static:nonroot
+FROM --platform=${TARGETPLATFORM:-linux/amd64} gcr.io/distroless/static:nonroot
 LABEL org.opencontainers.image.authors="Jochen Ullrich <kontakt@ju-hh.de>"
 LABEL org.opencontainers.image.source=https://github.com/cert-manager/aws-privateca-issuer
 WORKDIR /
