@@ -26,11 +26,15 @@ import (
 
 // AWSPCAIssuerSpec defines the desired state of AWSPCAIssuer
 type AWSPCAIssuerSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	// Specifies the ARN of the PCA resource
+	// Specifies the ARN of the PCA resource.
+	// Mutually exclusive with CertificateAuthorityRef.
+	// +optional
 	Arn string `json:"arn,omitempty"`
+	// References an ACK CertificateAuthority resource by name.
+	// The controller resolves the ARN from the referenced resource's
+	// .status.ackResourceMetadata.arn field. Mutually exclusive with Arn.
+	// +optional
+	CertificateAuthorityRef *CertificateAuthorityReference `json:"certificateAuthorityRef,omitempty"`
 	// Should contain the AWS region if it cannot be inferred
 	// +optional
 	Region string `json:"region,omitempty"`
@@ -43,6 +47,19 @@ type AWSPCAIssuerSpec struct {
 	// Specifies PCA template configuration for this issuer.
 	// +optional
 	PCATemplate *PCATemplate `json:"pcaTemplate,omitempty"`
+}
+
+// CertificateAuthorityReference references an ACK CertificateAuthority resource
+type CertificateAuthorityReference struct {
+	// Name of the ACK CertificateAuthority resource
+	Name string `json:"name"`
+	// Namespace of the resource. Required for namespaced AWSPCAIssuer,
+	// defaults to the issuer's namespace if omitted.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
+	// API group of the referenced resource. Defaults to acmpca.services.k8s.aws.
+	// +optional
+	Group string `json:"group,omitempty"`
 }
 
 // PCATemplate defines PCA template configuration

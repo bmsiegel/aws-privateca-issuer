@@ -20,9 +20,14 @@ import (
 	"context"
 
 	"github.com/go-logr/logr"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	api "github.com/cert-manager/aws-privateca-issuer/pkg/api/v1beta1"
 )
@@ -40,6 +45,7 @@ type AWSPCAIssuerReconciler struct {
 // +kubebuilder:rbac:groups=awspca.cert-manager.io,resources=awspcaissuers/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
+// +kubebuilder:rbac:groups=acmpca.services.k8s.aws,resources=certificateauthorities,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -59,7 +65,20 @@ func (r *AWSPCAIssuerReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *AWSPCAIssuerReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	ca := &unstructured.Unstructured{}
+	ca.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   defaultACKGroup,
+		Version: defaultACKVersion,
+		Kind:    defaultACKKind,
+	})
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&api.AWSPCAIssuer{}).
+		WatchesRawSource(source.Kind(
+			mgr.GetCache(), ca,
+			handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj *unstructured.Unstructured) []reconcile.Request {
+				return enqueueCertificateAuthorityRefIssuers(r.Client, false)(ctx, obj)
+			}),
+		)).
 		Complete(r)
 }

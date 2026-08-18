@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	awspca "github.com/cert-manager/aws-privateca-issuer/pkg/aws"
 	logrtesting "github.com/go-logr/logr/testing"
@@ -25,7 +26,9 @@ import (
 	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -261,7 +264,7 @@ func TestIssuerReconcile(t *testing.T) {
 				},
 			},
 			expectedReadyConditionStatus: metav1.ConditionFalse,
-			expectedError:                errNoArnInSpec,
+			expectedError:                errNoArnOrRefInSpec,
 			expectedResult:               ctrl.Result{},
 		},
 		"failure-issuer-no-access-key-specified": {
@@ -508,4 +511,128 @@ func assertErrorIs(t *testing.T, expectedError, actualError error) {
 func assertIssuerHasReadyCondition(t *testing.T, status metav1.ConditionStatus, issuerStatus *issuerapi.AWSPCAIssuerStatus) {
 	fmt.Printf("%v", issuerStatus.Conditions)
 	assert.Equal(t, status, issuerStatus.Conditions[0].Status, "unexpected condition status")
+}
+
+func TestCertificateAuthorityRefResolution(t *testing.T) {
+	origAWSDefaultRegion := awsDefaultRegion
+	awsDefaultRegion = ""
+	t.Cleanup(func() { awsDefaultRegion = origAWSDefaultRegion })
+
+	caGVK := schema.GroupVersionKind{
+		Group:   "acmpca.services.k8s.aws",
+		Version: "v1alpha1",
+		Kind:    "CertificateAuthority",
+	}
+
+	t.Run("resolves ARN from ready CertificateAuthority", func(t *testing.T) {
+		ca := &unstructured.Unstructured{}
+		ca.SetGroupVersionKind(caGVK)
+		ca.SetName("my-ca")
+		ca.SetNamespace("ns1")
+		unstructured.SetNestedMap(ca.Object, map[string]interface{}{
+			"arn": "arn:aws:acm-pca:us-east-1:123456789:certificate-authority/abc-123",
+		}, "status", "ackResourceMetadata")
+
+		issuer := &issuerapi.AWSPCAIssuer{
+			ObjectMeta: metav1.ObjectMeta{Name: "issuer1", Namespace: "ns1"},
+			Spec: issuerapi.AWSPCAIssuerSpec{
+				CertificateAuthorityRef: &issuerapi.CertificateAuthorityReference{
+					Name: "my-ca",
+				},
+				Region: "us-east-1",
+			},
+			Status: issuerapi.AWSPCAIssuerStatus{
+				Conditions: []metav1.Condition{{Type: issuerapi.ConditionTypeReady, Status: metav1.ConditionUnknown}},
+			},
+		}
+
+		scheme := runtime.NewScheme()
+		require.NoError(t, issuerapi.AddToScheme(scheme))
+		require.NoError(t, v1.AddToScheme(scheme))
+		scheme.AddKnownTypeWithName(caGVK, &unstructured.Unstructured{})
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(issuer, ca).
+			WithStatusSubresource(issuer).
+			Build()
+
+		controller := GenericIssuerReconciler{
+			Client:   fakeClient,
+			Log:      logrtesting.NewTestLogger(t),
+			Scheme:   scheme,
+			Recorder: record.NewFakeRecorder(10),
+		}
+
+		require.NoError(t, controller.Client.Get(context.TODO(), types.NamespacedName{Name: "issuer1", Namespace: "ns1"}, issuer))
+		result, err := controller.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "issuer1", Namespace: "ns1"}}, issuer)
+
+		assert.NoError(t, err)
+		assert.Equal(t, ctrl.Result{}, result)
+		assert.Equal(t, metav1.ConditionTrue, issuer.Status.Conditions[0].Status)
+	})
+
+	t.Run("requeues when CertificateAuthority ARN not yet populated", func(t *testing.T) {
+		ca := &unstructured.Unstructured{}
+		ca.SetGroupVersionKind(caGVK)
+		ca.SetName("my-ca")
+		ca.SetNamespace("ns1")
+		// No status.ackResourceMetadata.arn set
+
+		issuer := &issuerapi.AWSPCAIssuer{
+			ObjectMeta: metav1.ObjectMeta{Name: "issuer1", Namespace: "ns1"},
+			Spec: issuerapi.AWSPCAIssuerSpec{
+				CertificateAuthorityRef: &issuerapi.CertificateAuthorityReference{
+					Name: "my-ca",
+				},
+				Region: "us-east-1",
+			},
+			Status: issuerapi.AWSPCAIssuerStatus{
+				Conditions: []metav1.Condition{{Type: issuerapi.ConditionTypeReady, Status: metav1.ConditionUnknown}},
+			},
+		}
+
+		scheme := runtime.NewScheme()
+		require.NoError(t, issuerapi.AddToScheme(scheme))
+		require.NoError(t, v1.AddToScheme(scheme))
+		scheme.AddKnownTypeWithName(caGVK, &unstructured.Unstructured{})
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(issuer, ca).
+			WithStatusSubresource(issuer).
+			Build()
+
+		controller := GenericIssuerReconciler{
+			Client:   fakeClient,
+			Log:      logrtesting.NewTestLogger(t),
+			Scheme:   scheme,
+			Recorder: record.NewFakeRecorder(10),
+		}
+
+		require.NoError(t, controller.Client.Get(context.TODO(), types.NamespacedName{Name: "issuer1", Namespace: "ns1"}, issuer))
+		result, err := controller.Reconcile(context.TODO(), reconcile.Request{NamespacedName: types.NamespacedName{Name: "issuer1", Namespace: "ns1"}}, issuer)
+
+		assert.NoError(t, err)
+		assert.Equal(t, ctrl.Result{RequeueAfter: 10 * time.Second}, result)
+		assert.Equal(t, metav1.ConditionFalse, issuer.Status.Conditions[0].Status)
+	})
+
+	t.Run("rejects both arn and ref set", func(t *testing.T) {
+		spec := &issuerapi.AWSPCAIssuerSpec{
+			Arn:                     "arn:aws:acm-pca:us-east-1:123:ca/abc",
+			CertificateAuthorityRef: &issuerapi.CertificateAuthorityReference{Name: "my-ca"},
+			Region:                  "us-east-1",
+		}
+		err := validateIssuer(spec)
+		assert.Equal(t, errBothArnAndRef, err)
+	})
+
+	t.Run("rejects neither arn nor ref set", func(t *testing.T) {
+		spec := &issuerapi.AWSPCAIssuerSpec{
+			Region: "us-east-1",
+		}
+		err := validateIssuer(spec)
+		assert.Equal(t, errNoArnOrRefInSpec, err)
+	})
 }

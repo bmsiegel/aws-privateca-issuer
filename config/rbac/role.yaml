@@ -20,6 +20,14 @@ rules:
   - list
   - watch
 - apiGroups:
+  - acmpca.services.k8s.aws
+  resources:
+  - certificateauthorities
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - awspca.cert-manager.io
   resources:
   - awspcaclusterissuers

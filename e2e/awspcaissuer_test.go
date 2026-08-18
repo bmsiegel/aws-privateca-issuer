@@ -69,11 +69,15 @@ func TestMain(m *testing.M) {
 		log.Printf("Using CrossAccount role: %s", roleName)
 	}
 
+
 	log.Printf("Running tests with the following tags: %s", o.Tags)
 	status := godog.TestSuite{
-		Name:                 "AWSPrivateCAIssuer",
-		Options:              &o,
-		ScenarioInitializer:  InitializeScenario,
+		Name:    "AWSPrivateCAIssuer",
+		Options: &o,
+		ScenarioInitializer: func(ctx *godog.ScenarioContext) {
+			InitializeScenario(ctx)
+			InitializeCertificateAuthorityRefScenario(ctx)
+		},
 		TestSuiteInitializer: InitializeTestSuite,
 	}.Run()
 

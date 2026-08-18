@@ -160,7 +160,18 @@ func (r *CertificateRequestReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 
-	provisioner, err := GetProvisioner(ctx, r.Client, issuerName, iss.GetSpec())
+	spec := iss.GetSpec()
+	if spec.CertificateAuthorityRef != nil && spec.Arn == "" {
+		resolvedArn, err := resolveCertificateAuthorityArn(ctx, r.Client, spec.CertificateAuthorityRef, issuerName.Namespace)
+		if err != nil {
+			log.Error(err, "failed to resolve certificateAuthorityRef for signing")
+			_ = r.setStatus(ctx, cr, cmmeta.ConditionFalse, cmapi.CertificateRequestReasonPending, "waiting for CA ARN to be available")
+			return ctrl.Result{Requeue: true}, nil
+		}
+		spec.Arn = resolvedArn
+	}
+
+	provisioner, err := GetProvisioner(ctx, r.Client, issuerName, spec)
 	if err != nil {
 		log.Error(err, "failed to retrieve provisioner")
 		_ = r.setStatus(ctx, cr, cmmeta.ConditionFalse, cmapi.CertificateRequestReasonFailed, "failed to retrieve provisioner")
