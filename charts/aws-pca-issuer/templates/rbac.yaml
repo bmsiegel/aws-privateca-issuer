@@ -118,6 +118,14 @@ rules:
       - get
       - patch
       - update
+  - apiGroups:
+      - acmpca.services.k8s.aws
+    resources:
+      - certificateauthorities
+    verbs:
+      - get
+      - list
+      - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
