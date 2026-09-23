@@ -8,7 +8,10 @@
       "include-v-in-tag": true,
       "changelog-path": "CHANGELOG.md",
       "extra-files": [
-        "charts/aws-pca-issuer/Chart.yaml"
+        {
+          "type": "generic",
+          "path": "charts/aws-pca-issuer/Chart.yaml"
+        }
       ],
       "changelog-sections": [
         { "type": "feat", "section": "Features" },
