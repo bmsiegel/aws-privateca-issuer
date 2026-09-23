@@ -55,15 +55,14 @@
       "@semantic-release/git",
       {
         "assets": ["charts/aws-pca-issuer/Chart.yaml"],
-        "message": "chore(release): v${nextRelease.version} [skip ci]\n\n${nextRelease.notes}"
+        "message": "chore(release): v${nextRelease.version}\n\n${nextRelease.notes}"
       }
     ],
     [
       "@semantic-release/github",
       {
-        "successComment": false,
-        "failComment": false,
-        "failTitle": false
+        "successCommentCondition": false,
+        "failCommentCondition": false
       }
     ]
   ]
