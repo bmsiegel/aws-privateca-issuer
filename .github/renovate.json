@@ -5,6 +5,9 @@
     ":gitSignOff"
   ],
   "dependencyDashboard": false,
+  "semanticCommits": "enabled",
+  "semanticCommitType": "fix",
+  "semanticCommitScope": "deps",
   "ignorePaths" : [
     "**/config/manager/kustomization.yaml"
   ],
@@ -60,7 +63,7 @@
   ],
   "vulnerabilityAlerts": {
     "schedule": [],
-    "commitMessagePrefix": "[SECURITY]",
+    "commitMessagePrefix": "fix(security):",
     "commitMessageSuffix": "",
     "automerge": false
   },
