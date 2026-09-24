@@ -11,23 +11,61 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      pr-number: ${{ steps.release-pr.outputs.number }}
+      pr-sha: ${{ steps.release-pr.outputs.sha }}
     steps:
-      - id: release
-        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           token: ${{ secrets.CR_PAT }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      - name: Enable auto-merge on the release PR
-        if: steps.release.outputs.pr
+      - id: release-pr
         env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pr=$(gh pr list --repo "${GITHUB_REPOSITORY}" --base main --state open \
+            --label "autorelease: pending" --limit 1 --json number,headRefOid --jq '.[0] // {}')
+          echo "number=$(jq -r '.number // ""' <<<"${pr}")" >> "$GITHUB_OUTPUT"
+          echo "sha=$(jq -r '.headRefOid // ""' <<<"${pr}")" >> "$GITHUB_OUTPUT"
+
+  e2e-arm:
+    needs: release-please
+    if: needs.release-please.outputs.pr-sha != ''
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/on-safe-to-test-label.yml
+    with:
+      architecture: arm64
+      release-sha: ${{ needs.release-please.outputs.pr-sha }}
+
+  e2e-x86:
+    needs: release-please
+    if: needs.release-please.outputs.pr-sha != ''
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/on-safe-to-test-label.yml
+    with:
+      architecture: x86_64
+      release-sha: ${{ needs.release-please.outputs.pr-sha }}
+
+  merge-release-pr:
+    needs: [release-please, e2e-arm, e2e-x86]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
           GH_TOKEN: ${{ secrets.CR_PAT }}
-          RELEASE_PR: ${{ steps.release.outputs.pr }}
-        run: gh pr merge --auto --squash "$(jq -r .number <<<"${RELEASE_PR}")" --repo "${GITHUB_REPOSITORY}"
+          PR_NUMBER: ${{ needs.release-please.outputs.pr-number }}
+          PR_SHA: ${{ needs.release-please.outputs.pr-sha }}
+        run: gh pr merge "${PR_NUMBER}" --auto --squash --match-head-commit "${PR_SHA}" --repo "${GITHUB_REPOSITORY}"

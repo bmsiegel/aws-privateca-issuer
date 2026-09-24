@@ -6,6 +6,11 @@ on:
       architecture:
         required: true
         type: string
+      release-sha:
+        description: Release PR head commit to test instead of a labeled pull request
+        required: false
+        type: string
+        default: ''
 
 env:
   AWS_CLI_ARCHITECTURE: ${{ inputs.architecture == 'arm64' && 'aarch64' || 'x86_64' }}
@@ -59,7 +64,7 @@ jobs:
             sudo yum install libicu -y
 
   do-the-job:
-    if: ${{ (contains(github.event.pull_request.labels.*.name, 'safe to test') && !contains(github.event.pull_request.labels.*.name, 'lgtm')) || (contains(github.event_name, 'workflow_dispatch')) }}
+    if: ${{ (contains(github.event.pull_request.labels.*.name, 'safe to test') && !contains(github.event.pull_request.labels.*.name, 'lgtm')) || (contains(github.event_name, 'workflow_dispatch')) || inputs.release-sha != '' }}
     name: Do the job on the runner
     needs: start-runner # required to start the main job when the runner is ready
     runs-on: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
@@ -75,8 +80,8 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
-          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ inputs.release-sha || github.event.pull_request.head.sha }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
           persist-credentials: false
           # Checking out fork code under pull_request_target is a "pwn request"
           # risk; https://gh.io/securely-using-pull_request_target. Accepted here
@@ -206,18 +211,18 @@ jobs:
         run: |
           make kind-cluster-delete
       - name: Run helm test
-        if: ${{ !contains(github.event.pull_request.labels.*.name, 'chart update') && inputs.architecture != 'arm64' }}
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'chart update') && inputs.release-sha == '' && inputs.architecture != 'arm64' }}
         run: |
           make helm-test
       - name: Copy Kind logs to S3
-        if: ${{ !contains(github.event.pull_request.labels.*.name, 'chart update') && inputs.architecture != 'arm64' }}
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'chart update') && inputs.release-sha == '' && inputs.architecture != 'arm64' }}
         run: |
           mkdir logs-helm-test
           export E2E_ARTIFACTS_DIRECTORY=logs-helm-test
           make kind-export-logs
           aws s3 cp --recursive logs-helm-test s3://aws-privateca-issuer-k8s-logs-test-us-east-1/${{ needs.start-runner.outputs.ec2-instance-id }}-logs-helm-test/
       - name: Terminate Kind cluster
-        if: ${{ !contains(github.event.pull_request.labels.*.name, 'chart update') && inputs.architecture != 'arm64' }}
+        if: ${{ !contains(github.event.pull_request.labels.*.name, 'chart update') && inputs.release-sha == '' && inputs.architecture != 'arm64' }}
         run: |
           make kind-cluster-delete
       - name: Run Blog Test
@@ -243,7 +248,7 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    if: ${{ (contains(github.event.pull_request.labels.*.name, 'safe to test') && !contains(github.event.pull_request.labels.*.name, 'lgtm') && always()) || (contains(github.event_name, 'workflow_dispatch')) }} # required to stop the runner even if the error happened in the previous jobs
+    if: ${{ (contains(github.event.pull_request.labels.*.name, 'safe to test') && !contains(github.event.pull_request.labels.*.name, 'lgtm') && always()) || (contains(github.event_name, 'workflow_dispatch')) || (inputs.release-sha != '' && always()) }} # required to stop the runner even if the error happened in the previous jobs
     steps:
       - name: Setup AWS Credentials
         uses: aws-actions/configure-aws-credentials@master
