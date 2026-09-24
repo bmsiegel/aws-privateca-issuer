@@ -1,9 +1,10 @@
 name: Release
 on:
-  push:
-    tags:
-      - "*"
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
 
 env:
   PUBLIC_REGISTRY: public.ecr.aws/k1n1h4h4
@@ -15,15 +16,20 @@ jobs:
   build:
     name: release
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
     permissions:
       id-token: write
       contents: read
     steps:
+      - name: Validate version
+        run: |
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version '$VERSION' does not match vMAJOR.MINOR.PATCH"
+            exit 1
+          fi
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Get release version
-        id: tag
-        uses: aws-pca-k8s-plugin-ops-admin/action-get-tag@727a6f0a561be04e09013531e73a3983a65e3479
       - name: Setup Dockerx
         uses: docker/setup-buildx-action@v1
       - name: Setup AWS Credentials
@@ -45,13 +51,13 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           build-args: |
-            pkg_version=${{ steps.tag.outputs.tag }}
+            pkg_version=${{ env.VERSION }}
             user_agent=${{ env.ECR_USER_AGENT }}
           context: .
           platforms: linux/amd64,linux/arm64
           tags: |
             ${{ env.TAG_BASE }}:latest
-            ${{ env.TAG_BASE }}:${{steps.tag.outputs.tag}}
+            ${{ env.TAG_BASE }}:${{ env.VERSION }}
           push: true
       - name: Login to Staging ECR
         uses: docker/login-action@v1
@@ -67,42 +73,43 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           build-args: |
-            pkg_version=${{ steps.tag.outputs.tag }}
+            pkg_version=${{ env.VERSION }}
             user_agent=${{ env.EKS_USER_AGENT }}
           context: .
           platforms: linux/arm64
           provenance: false
           tags: |
-            ${{ env.TAG_BASE }}:${{steps.tag.outputs.tag}}-arm64
+            ${{ env.TAG_BASE }}:${{ env.VERSION }}-arm64
           push: true
       - name: Build and push amd image
         uses: docker/build-push-action@v6
         with:
           build-args: |
-            pkg_version=${{ steps.tag.outputs.tag }}
+            pkg_version=${{ env.VERSION }}
             user_agent=${{ env.EKS_USER_AGENT }}
           context: .
           platforms: linux/amd64
           provenance: false
           tags: |
-            ${{ env.TAG_BASE }}:${{steps.tag.outputs.tag}}-amd64
+            ${{ env.TAG_BASE }}:${{ env.VERSION }}-amd64
           push: true
       - name: Build and push manifest list
         uses: docker/build-push-action@v6
         with:
           build-args: |
-            pkg_version=${{ steps.tag.outputs.tag }}
+            pkg_version=${{ env.VERSION }}
             user_agent=${{ env.EKS_USER_AGENT }}
           context: .
           platforms: linux/amd64,linux/arm64
           provenance: false
           tags: |
             ${{ env.TAG_BASE }}:latest
-            ${{ env.TAG_BASE }}:${{steps.tag.outputs.tag}}
+            ${{ env.TAG_BASE }}:${{ env.VERSION }}
           push: true
       - name: Publish Helm chart
         uses: aws-pca-k8s-plugin-ops-admin/helm-gh-pages@12f5926e622ccae035cf5a3bb8d67ae6db7dc4b7
         with:
           token: ${{ secrets.CR_PAT }}
           linting: "off"
-          app_version: ${{ steps.tag.outputs.tag }}
+          app_version: ${{ env.VERSION }}
+          chart_version: ${{ env.VERSION }}

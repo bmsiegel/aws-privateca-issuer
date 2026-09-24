@@ -3,6 +3,11 @@ name: On Push to Main Branch
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: main-release
+  cancel-in-progress: false
 
 env:
   ECR_REPO: public.ecr.aws/z0d6s8x8
@@ -48,3 +53,67 @@ jobs:
           ${{ env.TAG_BASE }}:latest
           ${{ env.TAG_BASE }}:${{ env.PLUGIN_VERSION }}
         push: true
+
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.semantic.outputs.new_release_git_tag }}
+    steps:
+    - name: Check out code
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        fetch-depth: 0
+    - name: Compute next release
+      id: semantic
+      uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v6.0.0
+      with:
+        semantic_version: 25.0.9
+        dry_run: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  e2e:
+    needs: plan
+    if: ${{ needs.plan.outputs.tag != '' }}
+    strategy:
+      matrix:
+        architecture: [ arm64, x86_64 ]
+    permissions:
+      id-token: write
+      contents: read
+    uses: './.github/workflows/on-safe-to-test-label.yml'
+    with:
+      architecture: ${{ matrix.architecture }}
+
+  release:
+    needs: e2e
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.semantic.outputs.new_release_git_tag }}
+    steps:
+    - name: Check out code
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        fetch-depth: 0
+    - name: Tag and create GitHub release
+      id: semantic
+      uses: cycjimmy/semantic-release-action@b12c8f6015dc215fe37bc154d4ad456dd3833c90 # v6.0.0
+      with:
+        semantic_version: 25.0.9
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    needs: release
+    if: ${{ needs.release.outputs.tag != '' }}
+    permissions:
+      id-token: write
+      contents: read
+    uses: './.github/workflows/on-release.yml'
+    with:
+      version: ${{ needs.release.outputs.tag }}
+    secrets: inherit
