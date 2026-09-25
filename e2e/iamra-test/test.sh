@@ -29,11 +29,17 @@ make manager
 make create-local-registry
 make kind-cluster
 make deploy-cert-manager
-make docker-build
-make docker-push-local
+
+IMAGE_ARGS=()
+if [[ -n "${BETA_IMAGE_TAG:-}" ]]; then
+  IMAGE_ARGS=(--set image.repository="${BETA_IMAGE_REPOSITORY:?BETA_IMAGE_REPOSITORY must be set with BETA_IMAGE_TAG}" --set image.tag="$BETA_IMAGE_TAG")
+else
+  make docker-build
+  make docker-push-local
+fi
 
 kubectl create secret tls -n aws-privateca-issuer cert --cert=iamra-cert.pem --key=iamra.key
 
 sleep 15
 
-helm install issuer ./charts/aws-pca-issuer -f replaced-values.yaml -n aws-privateca-issuer
+helm install issuer ./charts/aws-pca-issuer -f replaced-values.yaml -n aws-privateca-issuer ${IMAGE_ARGS[@]+"${IMAGE_ARGS[@]}"}

@@ -42,6 +42,29 @@ set_variables() {
   AWS_REGION="us-east-1"
   DEPLOYMENT_NAME="aws-privateca-issuer"
   VALUES_FILE="$DIR/test-values.yaml"
+  HELM_REPO="${HELM_REPO:-}"
+  HELM_CHART_VERSION="${HELM_CHART_VERSION:-}"
+  HELM_DEVEL="${HELM_DEVEL:-}"
+  EXPECTED_IMAGE="${EXPECTED_IMAGE:-}"
+  IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-}"
+  IMAGE_TAG="${IMAGE_TAG:-}"
+  HELM_INSTALL_ARGS=()
+  if [[ -n "$HELM_REPO" ]]; then
+    HELM_CHART_NAME="aws-privateca-issuer"
+    HELM_INSTALL_ARGS+=(--repo "$HELM_REPO")
+  fi
+  if [[ -n "$HELM_CHART_VERSION" ]]; then
+    HELM_INSTALL_ARGS+=(--version "$HELM_CHART_VERSION")
+  fi
+  if [[ "$HELM_DEVEL" == "true" ]]; then
+    HELM_INSTALL_ARGS+=(--devel)
+  fi
+  if [[ -n "$IMAGE_REPOSITORY" ]]; then
+    HELM_INSTALL_ARGS+=(--set image.repository="$IMAGE_REPOSITORY")
+  fi
+  if [[ -n "$IMAGE_TAG" ]]; then
+    HELM_INSTALL_ARGS+=(--set image.tag="$IMAGE_TAG")
+  fi
 }
 
 clean_up() {
@@ -65,7 +88,7 @@ main() {
 
   echo "Installing the Helm Chart $HELM_CHART_NAME in namespace $K8S_NAMESPACE ... "
 
-  helm install "$DEPLOYMENT_NAME" "$HELM_CHART_NAME" --create-namespace --namespace "$K8S_NAMESPACE" -f $VALUES_FILE 1>/dev/null || exit 1
+  helm install "$DEPLOYMENT_NAME" "$HELM_CHART_NAME" ${HELM_INSTALL_ARGS[@]+"${HELM_INSTALL_ARGS[@]}"} --create-namespace --namespace "$K8S_NAMESPACE" -f $VALUES_FILE 1>/dev/null || exit 1
 
   echo "Helm chart installed."
 
@@ -97,6 +120,13 @@ main() {
   POD_STATUS=$(kubectl get pod/"$POD_NAME" -n $K8S_NAMESPACE -ojson | jq -r ".status.phase")
   [[ $POD_STATUS != Running ]] && echo "pod status is $POD_STATUS . Exiting ... " && exit 1
   echo "$POD_NAME pod found and status is $POD_STATUS"
+
+  POD_IMAGE=$(kubectl get pod/"$POD_NAME" -n $K8S_NAMESPACE -ojson | jq -r ".spec.containers[0].image")
+  echo "Pod image is $POD_IMAGE"
+  if [[ -n "$EXPECTED_IMAGE" && "$POD_IMAGE" != "$EXPECTED_IMAGE" ]]; then
+    echo "[ERROR] Expected pod image $EXPECTED_IMAGE. Exiting ..."
+    exit 1
+  fi
 
   LOGS=$(kubectl logs pod/"$POD_NAME" -n $K8S_NAMESPACE)
   if [ -z "$LOGS" ]; then
