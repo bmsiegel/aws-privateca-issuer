@@ -9,19 +9,21 @@ concurrency:
   group: main-release
   cancel-in-progress: false
 
-env:
-  BETA_PUBLIC_REPOSITORY: public.ecr.aws/z0d6s8x8/cert-manager-aws-privateca-issuer-test
-  BETA_CHARTS_URL: https://raw.githubusercontent.com/cert-manager/aws-privateca-issuer/gh-pages-beta
-  PROD_PUBLIC_REPOSITORY: public.ecr.aws/k1n1h4h4/cert-manager-aws-privateca-issuer
-  PROD_CHARTS_URL: https://cert-manager.github.io/aws-privateca-issuer
-
 jobs:
-  describe:
+  config:
     runs-on: ubuntu-latest
     permissions:
       contents: read
     outputs:
       version: ${{ steps.describe.outputs.version }}
+      beta_role: ${{ vars.BETA_PUBLISH_ROLE || 'arn:aws:iam::783680406432:role/GithubActionsPublishRole-test-us-east-1' }}
+      beta_public_repository: ${{ vars.BETA_PUBLIC_REPOSITORY || 'public.ecr.aws/z0d6s8x8/cert-manager-aws-privateca-issuer-test' }}
+      beta_private_repository: ${{ vars.BETA_PRIVATE_REPOSITORY || '783680406432.dkr.ecr.us-east-1.amazonaws.com/eks/aws-privateca-issuer-test' }}
+      beta_charts_url: https://raw.githubusercontent.com/${{ github.repository }}/gh-pages-beta
+      prod_role: ${{ vars.PROD_PUBLISH_ROLE || 'arn:aws:iam::105154636954:role/GithubActionsPublishRole-prod-us-east-1' }}
+      prod_public_repository: ${{ vars.PROD_PUBLIC_REPOSITORY || 'public.ecr.aws/k1n1h4h4/cert-manager-aws-privateca-issuer' }}
+      prod_private_repository: ${{ vars.PROD_PRIVATE_REPOSITORY || '105154636954.dkr.ecr.us-east-1.amazonaws.com/eks/aws-privateca-issuer' }}
+      prod_charts_url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
     steps:
     - name: Check out code
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -32,18 +34,18 @@ jobs:
       run: echo "version=$(git describe --tags)" >> "$GITHUB_OUTPUT"
 
   publish-beta:
-    needs: describe
+    needs: config
     permissions:
       id-token: write
       contents: read
     uses: './.github/workflows/on-release.yml'
     with:
-      version: ${{ needs.describe.outputs.version }}
-      role: arn:aws:iam::783680406432:role/GithubActionsPublishRole-test-us-east-1
-      public_repository: public.ecr.aws/z0d6s8x8/cert-manager-aws-privateca-issuer-test
-      private_repository: 783680406432.dkr.ecr.us-east-1.amazonaws.com/eks/aws-privateca-issuer-test
+      version: ${{ needs.config.outputs.version }}
+      role: ${{ needs.config.outputs.beta_role }}
+      public_repository: ${{ needs.config.outputs.beta_public_repository }}
+      private_repository: ${{ needs.config.outputs.beta_private_repository }}
       chart_branch: gh-pages-beta
-      charts_url: https://raw.githubusercontent.com/cert-manager/aws-privateca-issuer/gh-pages-beta
+      charts_url: ${{ needs.config.outputs.beta_charts_url }}
     secrets: inherit
 
   plan:
@@ -67,7 +69,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   e2e:
-    needs: [ plan, describe, publish-beta ]
+    needs: [ plan, config, publish-beta ]
     if: ${{ needs.plan.outputs.tag != '' }}
     strategy:
       matrix:
@@ -78,16 +80,18 @@ jobs:
     uses: './.github/workflows/on-safe-to-test-label.yml'
     with:
       architecture: ${{ matrix.architecture }}
-      image_repository: public.ecr.aws/z0d6s8x8/cert-manager-aws-privateca-issuer-test
-      image_tag: ${{ needs.describe.outputs.version }}
+      image_repository: ${{ needs.config.outputs.beta_public_repository }}
+      image_tag: ${{ needs.config.outputs.version }}
 
   helm-test-beta:
-    needs: [ describe, publish-beta ]
+    needs: [ config, publish-beta ]
     runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
-      VERSION: ${{ needs.describe.outputs.version }}
+      VERSION: ${{ needs.config.outputs.version }}
+      BETA_PUBLIC_REPOSITORY: ${{ needs.config.outputs.beta_public_repository }}
+      BETA_CHARTS_URL: ${{ needs.config.outputs.beta_charts_url }}
     steps:
     - name: Check out code
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -148,7 +152,7 @@ jobs:
         fi
 
   publish-prod:
-    needs: release
+    needs: [ config, release ]
     if: ${{ needs.release.outputs.tag != '' }}
     permissions:
       id-token: write
@@ -156,15 +160,15 @@ jobs:
     uses: './.github/workflows/on-release.yml'
     with:
       version: ${{ needs.release.outputs.tag }}
-      role: arn:aws:iam::105154636954:role/GithubActionsPublishRole-prod-us-east-1
-      public_repository: public.ecr.aws/k1n1h4h4/cert-manager-aws-privateca-issuer
-      private_repository: 105154636954.dkr.ecr.us-east-1.amazonaws.com/eks/aws-privateca-issuer
+      role: ${{ needs.config.outputs.prod_role }}
+      public_repository: ${{ needs.config.outputs.prod_public_repository }}
+      private_repository: ${{ needs.config.outputs.prod_private_repository }}
       chart_branch: gh-pages
-      charts_url: https://cert-manager.github.io/aws-privateca-issuer
+      charts_url: ${{ needs.config.outputs.prod_charts_url }}
     secrets: inherit
 
   e2e-prod:
-    needs: [ release, publish-prod ]
+    needs: [ config, release, publish-prod ]
     strategy:
       matrix:
         architecture: [ arm64, x86_64 ]
@@ -174,16 +178,18 @@ jobs:
     uses: './.github/workflows/on-safe-to-test-label.yml'
     with:
       architecture: ${{ matrix.architecture }}
-      image_repository: public.ecr.aws/k1n1h4h4/cert-manager-aws-privateca-issuer
+      image_repository: ${{ needs.config.outputs.prod_public_repository }}
       image_tag: ${{ needs.release.outputs.tag }}
 
   helm-test-prod:
-    needs: [ release, publish-prod ]
+    needs: [ config, release, publish-prod ]
     runs-on: ubuntu-latest
     permissions:
       contents: read
     env:
       VERSION: ${{ needs.release.outputs.tag }}
+      PROD_PUBLIC_REPOSITORY: ${{ needs.config.outputs.prod_public_repository }}
+      PROD_CHARTS_URL: ${{ needs.config.outputs.prod_charts_url }}
     steps:
     - name: Check out code
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
