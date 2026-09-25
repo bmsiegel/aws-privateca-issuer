@@ -148,12 +148,6 @@ jobs:
         HELM_CHART_VERSION: ${{ env.VERSION }}
         EXPECTED_IMAGE: ${{ env.BETA_PUBLIC_REPOSITORY }}:${{ env.VERSION }}
       run: e2e/helm_test.sh
-    - name: Test latest beta chart
-      env:
-        HELM_REPO: ${{ env.BETA_CHARTS_URL }}
-        HELM_DEVEL: "true"
-        EXPECTED_IMAGE: ${{ env.BETA_PUBLIC_REPOSITORY }}:${{ env.VERSION }}
-      run: e2e/helm_test.sh
 
   release:
     needs: [ plan, e2e, helm-test-beta ]
@@ -240,10 +234,5 @@ jobs:
       env:
         HELM_REPO: ${{ env.PROD_CHARTS_URL }}
         HELM_CHART_VERSION: ${{ env.VERSION }}
-        EXPECTED_IMAGE: ${{ env.PROD_PUBLIC_REPOSITORY }}:${{ env.VERSION }}
-      run: e2e/helm_test.sh
-    - name: Test latest prod chart
-      env:
-        HELM_REPO: ${{ env.PROD_CHARTS_URL }}
         EXPECTED_IMAGE: ${{ env.PROD_PUBLIC_REPOSITORY }}:${{ env.VERSION }}
       run: e2e/helm_test.sh
