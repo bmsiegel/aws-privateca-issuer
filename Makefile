@@ -79,8 +79,8 @@ test: generate fmt vet lint manifests envtest
 e2etest: test envtest
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(shell pwd)/bin -p path)" go test -v ./e2e/... -coverprofile cover.out
 
-helm-test: manager kind-cluster
-	$$SHELL e2e/helm_test.sh
+helm-test: manager kind-cluster deploy-cert-manager
+	KIND=${KIND} K8S_CLUSTER_NAME=${K8S_CLUSTER_NAME} hack/helm-test-local.sh
 
 blog-test:
 	$$SHELL e2e/blog_test.sh
@@ -300,10 +300,6 @@ install-eks-webhook: setup-eks-webhook upgrade-local
 
 .PHONY: install-eks-webhook-beta
 install-eks-webhook-beta: setup-eks-webhook upgrade-beta-ecr
-
-.PHONY: kind-load-image
-kind-load-image: ${KIND}
-	${KIND} load docker-image ${KIND_LOAD_IMAGE} --name ${K8S_CLUSTER_NAME}
 
 .PHONY: kind-cluster-delete
 kind-cluster-delete:

@@ -39,9 +39,6 @@ jobs:
 
   helm-test:
     runs-on: ubuntu-latest
-    env:
-      PR_IMAGE_REPOSITORY: aws-privateca-issuer
-      PR_IMAGE_TAG: pr
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -51,15 +48,5 @@ jobs:
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - name: Build image
-        run: docker build --build-arg pkg_version="$(git describe --tags)" --tag "$PR_IMAGE_REPOSITORY:$PR_IMAGE_TAG" .
-      - name: Create cluster
-        run: make manager kind-cluster
-      - name: Load image into cluster
-        run: make kind-load-image KIND_LOAD_IMAGE="$PR_IMAGE_REPOSITORY:$PR_IMAGE_TAG"
-      - name: Test local chart with this pull request's image
-        env:
-          IMAGE_REPOSITORY: ${{ env.PR_IMAGE_REPOSITORY }}
-          IMAGE_TAG: ${{ env.PR_IMAGE_TAG }}
-          EXPECTED_IMAGE: ${{ env.PR_IMAGE_REPOSITORY }}:${{ env.PR_IMAGE_TAG }}
-        run: e2e/helm_test.sh
+      - name: Install this pull request's chart from a Helm repository
+        run: make helm-test
