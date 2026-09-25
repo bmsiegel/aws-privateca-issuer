@@ -68,6 +68,10 @@ jobs:
             ]
           pre-runner-script: |
             sudo yum install libicu -y
+      - name: Wait for instance status checks
+        env:
+          INSTANCE_ID: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+        run: aws ec2 wait instance-status-ok --instance-ids "$INSTANCE_ID"
 
   do-the-job:
     name: Do the job on the runner
