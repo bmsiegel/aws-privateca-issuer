@@ -36,42 +36,28 @@ print_line_separation() {
 }
 
 set_variables() {
-  DIR="$( dirname -- "$0"; )"
-  K8S_NAMESPACE="aws-privateca-issuer"
-  HELM_CHART_NAME="$DIR/../charts/aws-pca-issuer"
-  AWS_REGION="us-east-1"
-  DEPLOYMENT_NAME="aws-privateca-issuer"
-  VALUES_FILE="$DIR/test-values.yaml"
-  HELM_REPO="${HELM_REPO:-}"
+  HELM_REPO="${HELM_REPO:?HELM_REPO must be set to the Helm repository URL to test}"
   HELM_CHART_VERSION="${HELM_CHART_VERSION:-}"
   HELM_DEVEL="${HELM_DEVEL:-}"
   EXPECTED_IMAGE="${EXPECTED_IMAGE:-}"
-  IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-}"
-  IMAGE_TAG="${IMAGE_TAG:-}"
-  HELM_INSTALL_ARGS=()
-  if [[ -n "$HELM_REPO" ]]; then
-    HELM_CHART_NAME="aws-privateca-issuer"
-    HELM_INSTALL_ARGS+=(--repo "$HELM_REPO")
-  fi
+  HELM_REPO_NAME="awspca"
+  K8S_NAMESPACE="default"
+  HELM_CHART_NAME="$HELM_REPO_NAME/aws-privateca-issuer"
+  HELM_INSTALL_ARGS=(--generate-name)
   if [[ -n "$HELM_CHART_VERSION" ]]; then
     HELM_INSTALL_ARGS+=(--version "$HELM_CHART_VERSION")
   fi
   if [[ "$HELM_DEVEL" == "true" ]]; then
     HELM_INSTALL_ARGS+=(--devel)
   fi
-  if [[ -n "$IMAGE_REPOSITORY" ]]; then
-    HELM_INSTALL_ARGS+=(--set image.repository="$IMAGE_REPOSITORY")
-  fi
-  if [[ -n "$IMAGE_TAG" ]]; then
-    HELM_INSTALL_ARGS+=(--set image.tag="$IMAGE_TAG")
-  fi
 }
 
 clean_up() {
   set +e
-  helm uninstall --namespace "$K8S_NAMESPACE" "$DEPLOYMENT_NAME" >/dev/null 2>&1
-  kubectl delete namespace "$K8S_NAMESPACE" >/dev/null 2>&1
-
+  helm list --all-namespaces -o json | jq -r '.[] | select(.chart | startswith("aws-privateca-issuer-")) | "\(.namespace) \(.name)"' | while read -r namespace release; do
+    helm uninstall --namespace "$namespace" "$release" >/dev/null 2>&1
+  done
+  set -e
 }
 
 main() {
@@ -84,38 +70,36 @@ main() {
 
   clean_up
 
-  set -e
+  echo "Adding Helm repository $HELM_REPO as $HELM_REPO_NAME ... "
+  helm repo add "$HELM_REPO_NAME" "$HELM_REPO" --force-update 1>/dev/null
+  helm repo update "$HELM_REPO_NAME" 1>/dev/null
 
   echo "Installing the Helm Chart $HELM_CHART_NAME in namespace $K8S_NAMESPACE ... "
 
-  helm install "$DEPLOYMENT_NAME" "$HELM_CHART_NAME" ${HELM_INSTALL_ARGS[@]+"${HELM_INSTALL_ARGS[@]}"} --create-namespace --namespace "$K8S_NAMESPACE" -f $VALUES_FILE 1>/dev/null || exit 1
+  RELEASE_NAME=$(helm install ${HELM_INSTALL_ARGS[@]+"${HELM_INSTALL_ARGS[@]}"} "$HELM_CHART_NAME" --namespace "$K8S_NAMESPACE" -o json | jq -r ".name")
 
-  echo "Helm chart installed."
+  echo "Helm release $RELEASE_NAME installed."
+  trap 'helm uninstall --namespace "$K8S_NAMESPACE" "$RELEASE_NAME" >/dev/null 2>&1' EXIT
 
-  DEPLOYMENT_NAME=$(kubectl get deployments -n $K8S_NAMESPACE -ojson | jq -r ".items[0].metadata.name")
+  SELECTOR="app.kubernetes.io/instance=$RELEASE_NAME"
+
+  DEPLOYMENT_NAME=$(kubectl get deployments -n $K8S_NAMESPACE -l "$SELECTOR" -ojson | jq -r ".items[0].metadata.name // empty")
 
   if [ -z "$DEPLOYMENT_NAME" ]; then
-    echo "[ERROR] Found empty ACK controller deployment name. Exiting ..."
+    echo "[ERROR] No deployment found for release $RELEASE_NAME. Exiting ..."
     exit 1
   fi
 
   echo "$DEPLOYMENT_NAME deployment found."
 
-  POD_NAME=$(kubectl get pods -n $K8S_NAMESPACE -ojson | jq -r ".items[0].metadata.name")
+  kubectl rollout status deployment/"$DEPLOYMENT_NAME" -n $K8S_NAMESPACE --timeout=120s 1>/dev/null || exit 1
+
+  POD_NAME=$(kubectl get pods -n $K8S_NAMESPACE -l "$SELECTOR" -ojson | jq -r ".items[0].metadata.name // empty")
 
   if [ -z "$POD_NAME" ]; then
-    echo "[ERROR] Found empty ACK controller pod name. Exiting ..."
+    echo "[ERROR] No pod found for release $RELEASE_NAME. Exiting ..."
     exit 1
   fi
-
-  # check if volume and volumeMount for 'cache-volume'
-  POD_VOLUMES=$(kubectl get pod/"$POD_NAME" -n $K8S_NAMESPACE -ojson | jq -r '.spec.volumes[] | select( .name == "cache-volume" )')
-  POD_VOLUME_MOUNTS=$(kubectl get pod/"$POD_NAME" -n $K8S_NAMESPACE -ojson | jq -r '.spec.containers[0].volumeMounts[] | select( .name == "cache-volume")')
-
-  [ -z "$POD_VOLUMES" ] && echo "Volume 'cache-volume' has not been found" && exit 1
-  [ -z "$POD_VOLUME_MOUNTS" ] && echo "Volume mount 'cache-volume' has not been found" && exit 1
-
-  kubectl wait --for=condition=ready pod  "$POD_NAME" -n $K8S_NAMESPACE --timeout=60s 1>/dev/null || exit 1
 
   POD_STATUS=$(kubectl get pod/"$POD_NAME" -n $K8S_NAMESPACE -ojson | jq -r ".status.phase")
   [[ $POD_STATUS != Running ]] && echo "pod status is $POD_STATUS . Exiting ... " && exit 1
@@ -145,11 +129,9 @@ main() {
   fi
   echo "No error statements found in Logs"
 
-  echo "uninstalling the Helm Chart $HELM_CHART_NAME in namespace $K8S_NAMESPACE ... "
-  helm uninstall --namespace "$K8S_NAMESPACE" "$DEPLOYMENT_NAME" 1>/dev/null || exit 1
-
-  echo "deleting $K8S_NAMESPACE namespace ... "
-  kubectl delete namespace "$K8S_NAMESPACE" 1>/dev/null || exit 1
+  echo "uninstalling Helm release $RELEASE_NAME in namespace $K8S_NAMESPACE ... "
+  trap - EXIT
+  helm uninstall --namespace "$K8S_NAMESPACE" "$RELEASE_NAME" 1>/dev/null || exit 1
 
   echo "Helm Test Finished Successfully"
 

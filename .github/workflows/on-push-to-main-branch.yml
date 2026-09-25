@@ -141,7 +141,7 @@ jobs:
     - name: Wait for beta chart
       run: hack/wait-for-chart.sh "$BETA_CHARTS_URL" "$VERSION"
     - name: Create cluster
-      run: make manager kind-cluster
+      run: make manager kind-cluster deploy-cert-manager
     - name: Test beta chart at this version
       env:
         HELM_REPO: ${{ env.BETA_CHARTS_URL }}
@@ -235,7 +235,7 @@ jobs:
     - name: Wait for prod chart
       run: hack/wait-for-chart.sh "$PROD_CHARTS_URL" "$VERSION"
     - name: Create cluster
-      run: make manager kind-cluster
+      run: make manager kind-cluster deploy-cert-manager
     - name: Test prod chart at this version
       env:
         HELM_REPO: ${{ env.PROD_CHARTS_URL }}
