@@ -65,6 +65,7 @@ main() {
 
   check_is_installed kubectl "kubectl is not installed"
   check_is_installed helm "helm is not installed"
+  check_is_installed jq "jq is not installed"
 
   set_variables
 
