@@ -20,6 +20,16 @@ env:
   EC2_INSTANCE_TYPE: ${{ inputs.architecture == 'arm64' && 'c7gn.xlarge' || 'c7a.xlarge' }}
   GO_ARCHITECTURE: ${{ inputs.architecture == 'arm64' && 'arm64' || 'amd64' }}
   KUBECTL_ARCHITECTURE: $GO_ARCHITECTURE
+  E2E_TESTING_ROLE: ${{ vars.E2E_TESTING_ROLE || 'arn:aws:iam::783680406432:role/GithubActionsTestingRole-test-us-east-1' }}
+  E2E_RUNNER_TOKEN_SECRET: ${{ vars.E2E_RUNNER_TOKEN_SECRET || 'GithubToken-test-us-east-1' }}
+  E2E_INSTANCE_PROFILE: ${{ vars.E2E_INSTANCE_PROFILE || 'K8sPluginInstanceProfile-test-us-east-1' }}
+  E2E_LAUNCH_TEMPLATE: ${{ vars.E2E_LAUNCH_TEMPLATE || 'GithubRunnerLaunchTemplate-test-us-east-1' }}
+  E2E_PLUGIN_USER: ${{ vars.E2E_PLUGIN_USER || 'K8sPluginUser-test-us-east-1' }}
+  E2E_CROSS_ACCOUNT_ROLE: ${{ vars.E2E_CROSS_ACCOUNT_ROLE || 'arn:aws:iam::874411242420:role/CrossAccountTestingRole-crossaccount-us-east-1' }}
+  E2E_ISSUER_TEST_ROLE: ${{ vars.E2E_ISSUER_TEST_ROLE }}
+  E2E_IRSA_ROLE: ${{ vars.E2E_IRSA_ROLE || 'arn:aws:iam::783680406432:role/IrsaTestingRole-test-us-east-1' }}
+  E2E_IRSA_BUCKET: ${{ vars.E2E_IRSA_BUCKET || 'aws-privateca-issuer-irsa-test-us-east-1' }}
+  E2E_LOGS_BUCKET: ${{ vars.E2E_LOGS_BUCKET || 'aws-privateca-issuer-k8s-logs-test-us-east-1' }}
 
 jobs:
   start-runner:
@@ -34,7 +44,7 @@ jobs:
       - name: Setup AWS Credentials
         uses: aws-actions/configure-aws-credentials@master
         with:
-          role-to-assume: arn:aws:iam::783680406432:role/GithubActionsTestingRole-test-us-east-1
+          role-to-assume: ${{ env.E2E_TESTING_ROLE }}
           aws-region: us-east-1
       - name: Configure EC2 Runner Parameters
         run: |
@@ -51,13 +61,13 @@ jobs:
         uses: aws-pca-k8s-plugin-ops-admin/ec2-github-runner@46a464e192039be36e1066c49baeabded9065c51
         with:
           mode: start
-          github-token: GithubToken-test-us-east-1
+          github-token: ${{ env.E2E_RUNNER_TOKEN_SECRET }}
           ec2-image-id: ${{ env.AMI }}
           ec2-instance-type: ${{ env.EC2_INSTANCE_TYPE }}
           vpc-id: ${{ env.VPC_ID }}
           security-group-id: ${{ env.SG_ID }}
-          iam-role-name: K8sPluginInstanceProfile-test-us-east-1
-          ec2-launch-template: GithubRunnerLaunchTemplate-test-us-east-1
+          iam-role-name: ${{ env.E2E_INSTANCE_PROFILE }}
+          ec2-launch-template: ${{ env.E2E_LAUNCH_TEMPLATE }}
           aws-resource-tags: >
             [
               {"Key": "Name", "Value": "ec2-github-runner"},
@@ -159,11 +169,15 @@ jobs:
           curl -sSL https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
       - name: Setup test environment
         run: |
-          export PLUGIN_USER_NAME_OVERRIDE=K8sPluginUser-test-us-east-1
-          export PLUGIN_CROSS_ACCOUNT_ROLE=arn:aws:iam::874411242420:role/CrossAccountTestingRole-crossaccount-us-east-1
+          export PLUGIN_USER_NAME_OVERRIDE=$E2E_PLUGIN_USER
           export HOME=$GITHUB_WORKSPACE
           echo PLUGIN_USER_NAME_OVERRIDE=$PLUGIN_USER_NAME_OVERRIDE >> $GITHUB_ENV
-          echo PLUGIN_CROSS_ACCOUNT_ROLE=$PLUGIN_CROSS_ACCOUNT_ROLE >> $GITHUB_ENV
+          if [[ "$E2E_CROSS_ACCOUNT_ROLE" != "none" ]]; then
+            echo PLUGIN_CROSS_ACCOUNT_ROLE=$E2E_CROSS_ACCOUNT_ROLE >> $GITHUB_ENV
+          fi
+          if [[ -n "$E2E_ISSUER_TEST_ROLE" ]]; then
+            echo ROLE_TO_ASSUME_OVERRIDE=$E2E_ISSUER_TEST_ROLE >> $GITHUB_ENV
+          fi
           echo HOME=$HOME >> $GITHUB_ENV
       - name: Run test cases with EC2 Instance Profiles and K8s Secret
         run: |
@@ -175,13 +189,13 @@ jobs:
           mkdir logs
           export E2E_ARTIFACTS_DIRECTORY=logs
           make kind-export-logs
-          aws s3 cp --recursive logs s3://aws-privateca-issuer-k8s-logs-test-us-east-1/${{ needs.start-runner.outputs.ec2-instance-id }}/
+          aws s3 cp --recursive logs s3://${{ env.E2E_LOGS_BUCKET }}/${{ needs.start-runner.outputs.ec2-instance-id }}/
       - name: Terminate Kind cluster and setup for next test
         if: ${{ always() }}
         run: |
           make kind-cluster-delete
-          export OIDC_IAM_ROLE=arn:aws:iam::783680406432:role/IrsaTestingRole-test-us-east-1
-          export OIDC_S3_BUCKET_NAME=aws-privateca-issuer-irsa-test-us-east-1
+          export OIDC_IAM_ROLE=$E2E_IRSA_ROLE
+          export OIDC_S3_BUCKET_NAME=$E2E_IRSA_BUCKET
           echo OIDC_IAM_ROLE=$OIDC_IAM_ROLE >> $GITHUB_ENV
           echo OIDC_S3_BUCKET_NAME=$OIDC_S3_BUCKET_NAME >> $GITHUB_ENV
       - name: Run test cases with IRSA and K8s Secret
@@ -196,7 +210,7 @@ jobs:
           mkdir logs-irsa
           export E2E_ARTIFACTS_DIRECTORY=logs-irsa
           make kind-export-logs
-          aws s3 cp --recursive logs-irsa s3://aws-privateca-issuer-k8s-logs-test-us-east-1/${{ needs.start-runner.outputs.ec2-instance-id }}-irsa/
+          aws s3 cp --recursive logs-irsa s3://${{ env.E2E_LOGS_BUCKET }}/${{ needs.start-runner.outputs.ec2-instance-id }}-irsa/
       - name: Terminate Kind cluster
         if: ${{ always() }}
         run: |
@@ -212,7 +226,7 @@ jobs:
           mkdir logs-iamra-test
           export E2E_ARTIFACTS_DIRECTORY=logs-iamra-test
           make kind-export-logs
-          aws s3 cp --recursive logs-iamra-test s3://aws-privateca-issuer-k8s-logs-test-us-east-1/${{ needs.start-runner.outputs.ec2-instance-id }}-logs-iamra-test/
+          aws s3 cp --recursive logs-iamra-test s3://${{ env.E2E_LOGS_BUCKET }}/${{ needs.start-runner.outputs.ec2-instance-id }}-logs-iamra-test/
       - name: Terminate Kind cluster
         if: ${{ always() }}
         run: |
@@ -229,7 +243,7 @@ jobs:
           mkdir logs-blog
           export E2E_ARTIFACTS_DIRECTORY=logs-blog
           make kind-export-logs
-          aws s3 cp --recursive logs-blog s3://aws-privateca-issuer-k8s-logs-test-us-east-1/${{ needs.start-runner.outputs.ec2-instance-id }}-blog/
+          aws s3 cp --recursive logs-blog s3://${{ env.E2E_LOGS_BUCKET }}/${{ needs.start-runner.outputs.ec2-instance-id }}-blog/
 
   stop-runner:
     name: Stop self-hosted EC2 runner
@@ -245,7 +259,7 @@ jobs:
       - name: Setup AWS Credentials
         uses: aws-actions/configure-aws-credentials@master
         with:
-          role-to-assume: arn:aws:iam::783680406432:role/GithubActionsTestingRole-test-us-east-1
+          role-to-assume: ${{ env.E2E_TESTING_ROLE }}
           aws-region: us-east-1
       - name: Setup AWS Region
         run: |
@@ -255,6 +269,6 @@ jobs:
         uses: aws-pca-k8s-plugin-ops-admin/ec2-github-runner@46a464e192039be36e1066c49baeabded9065c51
         with:
           mode: stop
-          github-token: GithubToken-test-us-east-1
+          github-token: ${{ env.E2E_RUNNER_TOKEN_SECRET }}
           label: ${{ needs.start-runner.outputs.label }}
           ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
