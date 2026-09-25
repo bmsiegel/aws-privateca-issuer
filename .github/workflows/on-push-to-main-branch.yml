@@ -16,13 +16,13 @@ jobs:
       contents: read
     outputs:
       version: ${{ steps.describe.outputs.version }}
-      beta_role: ${{ vars.BETA_PUBLISH_ROLE || 'arn:aws:iam::783680406432:role/GithubActionsPublishRole-test-us-east-1' }}
-      beta_public_repository: ${{ vars.BETA_PUBLIC_REPOSITORY || 'public.ecr.aws/z0d6s8x8/cert-manager-aws-privateca-issuer-test' }}
-      beta_private_repository: ${{ vars.BETA_PRIVATE_REPOSITORY || '783680406432.dkr.ecr.us-east-1.amazonaws.com/eks/aws-privateca-issuer-test' }}
+      beta_role: ${{ steps.accounts.outputs.beta_role }}
+      beta_public_repository: ${{ steps.accounts.outputs.beta_public_repository }}
+      beta_private_repository: ${{ steps.accounts.outputs.beta_private_repository }}
       beta_charts_url: https://raw.githubusercontent.com/${{ github.repository }}/gh-pages-beta
-      prod_role: ${{ vars.PROD_PUBLISH_ROLE || 'arn:aws:iam::105154636954:role/GithubActionsPublishRole-prod-us-east-1' }}
-      prod_public_repository: ${{ vars.PROD_PUBLIC_REPOSITORY || 'public.ecr.aws/k1n1h4h4/cert-manager-aws-privateca-issuer' }}
-      prod_private_repository: ${{ vars.PROD_PRIVATE_REPOSITORY || '105154636954.dkr.ecr.us-east-1.amazonaws.com/eks/aws-privateca-issuer' }}
+      prod_role: ${{ steps.accounts.outputs.prod_role }}
+      prod_public_repository: ${{ steps.accounts.outputs.prod_public_repository }}
+      prod_private_repository: ${{ steps.accounts.outputs.prod_private_repository }}
       prod_charts_url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
     steps:
     - name: Check out code
@@ -32,6 +32,29 @@ jobs:
     - name: Describe commit
       id: describe
       run: echo "version=$(git describe --tags)" >> "$GITHUB_OUTPUT"
+    - name: Resolve accounts
+      id: accounts
+      env:
+        DEV_ACCOUNT: ${{ vars.DEV_ACCOUNT }}
+        DEV_STAGE: ${{ vars.DEV_STAGE }}
+        DEV_REGISTRY_ALIAS: ${{ vars.DEV_REGISTRY_ALIAS }}
+        OWNER: ${{ github.repository_owner }}
+        REPOSITORY: ${{ github.event.repository.name }}
+      run: |
+        set -o pipefail
+        emit() {
+          echo "$1_role=arn:aws:iam::$2:role/GithubActionsPublishRole-$3-us-east-1"
+          echo "$1_public_repository=public.ecr.aws/$4/${OWNER}-${REPOSITORY}$5"
+          echo "$1_private_repository=$2.dkr.ecr.us-east-1.amazonaws.com/eks/${REPOSITORY}$5"
+        }
+        if [[ -n "$DEV_ACCOUNT" ]]; then
+          : "${DEV_STAGE:?DEV_STAGE must be set with DEV_ACCOUNT}" "${DEV_REGISTRY_ALIAS:?DEV_REGISTRY_ALIAS must be set with DEV_ACCOUNT}"
+          emit beta "$DEV_ACCOUNT" "$DEV_STAGE" "$DEV_REGISTRY_ALIAS" -dev
+          emit prod "$DEV_ACCOUNT" "$DEV_STAGE" "$DEV_REGISTRY_ALIAS" -dev
+        else
+          emit beta 783680406432 test z0d6s8x8 -test
+          emit prod 105154636954 prod k1n1h4h4 ""
+        fi | tee -a "$GITHUB_OUTPUT"
 
   publish-beta:
     needs: config
