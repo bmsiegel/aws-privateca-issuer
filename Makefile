@@ -188,6 +188,17 @@ GOLANGCILINT = $(shell pwd)/bin/golangci-lint
 golangci-lint:
 	$(call go-install-tool,$(GOLANGCILINT),github.com/golangci/golangci-lint/cmd/golangci-lint@v1.35.2)
 
+ACTIONLINT_VERSION := 1.7.12
+ACTIONLINT := ${BIN}/actionlint-${ACTIONLINT_VERSION}
+
+${ACTIONLINT}: ${BIN}
+	curl -sSL https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_$$(uname -s | tr A-Z a-z)_$$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz | tar xz -C ${BIN} actionlint
+	mv ${BIN}/actionlint ${ACTIONLINT}
+
+.PHONY: verify-release
+verify-release: ${ACTIONLINT}
+	ACTIONLINT=${ACTIONLINT} hack/verify-release.sh
+
 # go-install-tool will 'go get' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
 define go-install-tool
