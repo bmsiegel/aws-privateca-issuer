@@ -10,49 +10,41 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  ECR_REPO: public.ecr.aws/z0d6s8x8
+  BETA_PUBLIC_REPOSITORY: public.ecr.aws/z0d6s8x8/cert-manager-aws-privateca-issuer-test
+  BETA_CHARTS_URL: https://raw.githubusercontent.com/cert-manager/aws-privateca-issuer/gh-pages-beta
+  PROD_PUBLIC_REPOSITORY: public.ecr.aws/k1n1h4h4/cert-manager-aws-privateca-issuer
+  PROD_CHARTS_URL: https://cert-manager.github.io/aws-privateca-issuer
 
 jobs:
-  build:
+  describe:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.describe.outputs.version }}
+    steps:
+    - name: Check out code
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        fetch-depth: 0
+    - name: Describe commit
+      id: describe
+      run: echo "version=$(git describe --tags)" >> "$GITHUB_OUTPUT"
+
+  publish-beta:
+    needs: describe
     permissions:
       id-token: write
       contents: read
-    steps:
-    - name: Check out code
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    - name: Setup Dockerx
-      uses: docker/setup-buildx-action@v1
-    - name: Setup AWS Credentials
-      uses: aws-actions/configure-aws-credentials@master
-      with:
-        role-to-assume: arn:aws:iam::783680406432:role/GithubActionsPublishRole-test-us-east-1
-        aws-region: us-east-1
-    - name: Login to Public ECR
-      uses: docker/login-action@v1
-      with:
-        registry: public.ecr.aws
-      env:
-        AWS_REGION: us-east-1
-    - name: Setup Push to ECR
-      run: |
-        export PLUGIN_VERSION=$(git describe --tags)
-        export TAG_BASE=${{ env.ECR_REPO }}/$(echo $GITHUB_REPOSITORY | sed s#/#-#)-test
-        echo TAG_BASE=$TAG_BASE >> $GITHUB_ENV
-        echo PLUGIN_VERSION=$PLUGIN_VERSION >> $GITHUB_ENV
-    - name: Build and push container images
-      uses: docker/build-push-action@v6
-      with:
-        build-args: |
-          pkg_version=${{ env.PLUGIN_VERSION }}
-        context: .
-        platforms: linux/amd64,linux/arm64
-        tags: |
-          ${{ env.TAG_BASE }}:latest
-          ${{ env.TAG_BASE }}:${{ env.PLUGIN_VERSION }}
-        push: true
+    uses: './.github/workflows/on-release.yml'
+    with:
+      version: ${{ needs.describe.outputs.version }}
+      role: arn:aws:iam::783680406432:role/GithubActionsPublishRole-test-us-east-1
+      public_repository: public.ecr.aws/z0d6s8x8/cert-manager-aws-privateca-issuer-test
+      private_repository: 783680406432.dkr.ecr.us-east-1.amazonaws.com/eks/aws-privateca-issuer-test
+      chart_branch: gh-pages-beta
+      charts_url: https://raw.githubusercontent.com/cert-manager/aws-privateca-issuer/gh-pages-beta
+    secrets: inherit
 
   plan:
     runs-on: ubuntu-latest
@@ -75,7 +67,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   e2e:
-    needs: plan
+    needs: [ plan, describe, publish-beta ]
     if: ${{ needs.plan.outputs.tag != '' }}
     strategy:
       matrix:
@@ -86,9 +78,48 @@ jobs:
     uses: './.github/workflows/on-safe-to-test-label.yml'
     with:
       architecture: ${{ matrix.architecture }}
+      image_repository: public.ecr.aws/z0d6s8x8/cert-manager-aws-privateca-issuer-test
+      image_tag: ${{ needs.describe.outputs.version }}
+
+  helm-test-beta:
+    needs: [ describe, publish-beta ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.describe.outputs.version }}
+    steps:
+    - name: Check out code
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        fetch-depth: 0
+    - name: Setup Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+    - name: Check latest points at this build
+      run: |
+        test "$(docker buildx imagetools inspect "$BETA_PUBLIC_REPOSITORY:latest" --format '{{json .Manifest.Digest}}')" = \
+             "$(docker buildx imagetools inspect "$BETA_PUBLIC_REPOSITORY:$VERSION" --format '{{json .Manifest.Digest}}')"
+    - name: Wait for beta chart
+      run: hack/wait-for-chart.sh "$BETA_CHARTS_URL" "$VERSION"
+    - name: Create cluster
+      run: make manager kind-cluster
+    - name: Test beta chart at this version
+      env:
+        HELM_REPO: ${{ env.BETA_CHARTS_URL }}
+        HELM_CHART_VERSION: ${{ env.VERSION }}
+        EXPECTED_IMAGE: ${{ env.BETA_PUBLIC_REPOSITORY }}:${{ env.VERSION }}
+      run: e2e/helm_test.sh
+    - name: Test latest beta chart
+      env:
+        HELM_REPO: ${{ env.BETA_CHARTS_URL }}
+        HELM_DEVEL: "true"
+        EXPECTED_IMAGE: ${{ env.BETA_PUBLIC_REPOSITORY }}:${{ env.VERSION }}
+      run: e2e/helm_test.sh
 
   release:
-    needs: e2e
+    needs: [ plan, e2e, helm-test-beta ]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -106,8 +137,17 @@ jobs:
         semantic_version: 25.0.9
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Check release matches plan
+      env:
+        PLANNED: ${{ needs.plan.outputs.tag }}
+        RELEASED: ${{ steps.semantic.outputs.new_release_git_tag }}
+      run: |
+        if [[ "$PLANNED" != "$RELEASED" ]]; then
+          echo "::error::released '$RELEASED' but planned '$PLANNED'"
+          exit 1
+        fi
 
-  publish:
+  publish-prod:
     needs: release
     if: ${{ needs.release.outputs.tag != '' }}
     permissions:
@@ -116,4 +156,53 @@ jobs:
     uses: './.github/workflows/on-release.yml'
     with:
       version: ${{ needs.release.outputs.tag }}
+      role: arn:aws:iam::105154636954:role/GithubActionsPublishRole-prod-us-east-1
+      public_repository: public.ecr.aws/k1n1h4h4/cert-manager-aws-privateca-issuer
+      private_repository: 105154636954.dkr.ecr.us-east-1.amazonaws.com/eks/aws-privateca-issuer
+      chart_branch: gh-pages
+      charts_url: https://cert-manager.github.io/aws-privateca-issuer
     secrets: inherit
+
+  e2e-prod:
+    needs: [ release, publish-prod ]
+    strategy:
+      matrix:
+        architecture: [ arm64, x86_64 ]
+    permissions:
+      id-token: write
+      contents: read
+    uses: './.github/workflows/on-safe-to-test-label.yml'
+    with:
+      architecture: ${{ matrix.architecture }}
+      image_repository: public.ecr.aws/k1n1h4h4/cert-manager-aws-privateca-issuer
+      image_tag: ${{ needs.release.outputs.tag }}
+
+  helm-test-prod:
+    needs: [ release, publish-prod ]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.release.outputs.tag }}
+    steps:
+    - name: Check out code
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+    - name: Setup Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+    - name: Wait for prod chart
+      run: hack/wait-for-chart.sh "$PROD_CHARTS_URL" "$VERSION"
+    - name: Create cluster
+      run: make manager kind-cluster
+    - name: Test prod chart at this version
+      env:
+        HELM_REPO: ${{ env.PROD_CHARTS_URL }}
+        HELM_CHART_VERSION: ${{ env.VERSION }}
+        EXPECTED_IMAGE: ${{ env.PROD_PUBLIC_REPOSITORY }}:${{ env.VERSION }}
+      run: e2e/helm_test.sh
+    - name: Test latest prod chart
+      env:
+        HELM_REPO: ${{ env.PROD_CHARTS_URL }}
+        EXPECTED_IMAGE: ${{ env.PROD_PUBLIC_REPOSITORY }}:${{ env.VERSION }}
+      run: e2e/helm_test.sh
