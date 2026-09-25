@@ -94,6 +94,7 @@ jobs:
   e2e:
     needs: [ config, publish-beta ]
     strategy:
+      fail-fast: false
       matrix:
         architecture: [ arm64, x86_64 ]
     permissions:
@@ -203,6 +204,7 @@ jobs:
   e2e-prod:
     needs: [ config, release, publish-prod ]
     strategy:
+      fail-fast: false
       matrix:
         architecture: [ arm64, x86_64 ]
     permissions:
