@@ -38,7 +38,6 @@ print_line_separation() {
 set_variables() {
   HELM_REPO="${HELM_REPO:?HELM_REPO must be set to the Helm repository URL to test}"
   HELM_CHART_VERSION="${HELM_CHART_VERSION:-}"
-  HELM_DEVEL="${HELM_DEVEL:-}"
   EXPECTED_IMAGE="${EXPECTED_IMAGE:-}"
   HELM_REPO_NAME="awspca"
   K8S_NAMESPACE="default"
@@ -46,9 +45,6 @@ set_variables() {
   HELM_INSTALL_ARGS=(--generate-name)
   if [[ -n "$HELM_CHART_VERSION" ]]; then
     HELM_INSTALL_ARGS+=(--version "$HELM_CHART_VERSION")
-  fi
-  if [[ "$HELM_DEVEL" == "true" ]]; then
-    HELM_INSTALL_ARGS+=(--devel)
   fi
 }
 
