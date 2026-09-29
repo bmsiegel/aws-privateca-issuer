@@ -6,11 +6,11 @@ on:
       architecture:
         required: true
         type: string
-      image_repository:
+      chart_repository:
         required: false
         type: string
         default: ''
-      image_tag:
+      chart_version:
         required: false
         type: string
         default: ''
@@ -83,10 +83,8 @@ jobs:
     permissions:
       contents: read
     env:
-      BETA_IMAGE_REPOSITORY: ${{ inputs.image_repository }}
-      BETA_IMAGE_TAG: ${{ inputs.image_tag }}
-      CLUSTER_TARGET: ${{ inputs.image_tag != '' && 'cluster-beta' || 'cluster' }}
-      EKS_WEBHOOK_TARGET: ${{ inputs.image_tag != '' && 'install-eks-webhook-beta' || 'install-eks-webhook' }}
+      CHART_REPOSITORY: ${{ inputs.chart_repository }}
+      CHART_VERSION: ${{ inputs.chart_version }}
     steps:
       - name: Install Git
         run: sudo yum install git -y
@@ -174,9 +172,12 @@ jobs:
             echo PLUGIN_CROSS_ACCOUNT_ROLE=$E2E_CROSS_ACCOUNT_ROLE >> $GITHUB_ENV
           fi
           echo HOME=$HOME >> $GITHUB_ENV
+      - name: Wait for published chart
+        if: ${{ inputs.chart_version != '' }}
+        run: hack/wait-for-chart.sh "$CHART_REPOSITORY" "$CHART_VERSION"
       - name: Run test cases with EC2 Instance Profiles and K8s Secret
         run: |
-          make $CLUSTER_TARGET
+          make cluster
           make e2etest
       - name: Copy Kind logs to S3
         if: ${{ !cancelled() }}
@@ -196,8 +197,8 @@ jobs:
       - name: Run test cases with IRSA and K8s Secret
         if: ${{ !cancelled() }}
         run: |
-          make $CLUSTER_TARGET
-          make $EKS_WEBHOOK_TARGET
+          make cluster
+          make install-eks-webhook
           make e2etest
       - name: Copy Kind logs to S3
         if: ${{ !cancelled() }}
@@ -229,8 +230,8 @@ jobs:
       - name: Run Blog Test
         if: ${{ inputs.architecture != 'arm64' }}
         run: |
-          make $CLUSTER_TARGET
-          make $EKS_WEBHOOK_TARGET
+          make cluster
+          make install-eks-webhook
           make blog-test
       - name: Copy Kind logs to S3
         if: ${{ inputs.architecture != 'arm64' }}

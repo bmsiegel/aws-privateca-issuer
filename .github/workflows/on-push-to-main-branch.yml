@@ -103,8 +103,8 @@ jobs:
     uses: './.github/workflows/on-safe-to-test-label.yml'
     with:
       architecture: ${{ matrix.architecture }}
-      image_repository: ${{ needs.config.outputs.beta_public_repository }}
-      image_tag: ${{ needs.config.outputs.version }}
+      chart_repository: ${{ needs.config.outputs.beta_charts_url }}
+      chart_version: ${{ needs.config.outputs.version }}
 
   helm-test-beta:
     needs: [ config, publish-beta ]
@@ -210,8 +210,8 @@ jobs:
     uses: './.github/workflows/on-safe-to-test-label.yml'
     with:
       architecture: ${{ matrix.architecture }}
-      image_repository: ${{ needs.config.outputs.prod_public_repository }}
-      image_tag: ${{ needs.release.outputs.tag }}
+      chart_repository: ${{ needs.config.outputs.prod_charts_url }}
+      chart_version: ${{ needs.release.outputs.tag }}
 
   helm-test-prod:
     needs: [ config, release, publish-prod ]
