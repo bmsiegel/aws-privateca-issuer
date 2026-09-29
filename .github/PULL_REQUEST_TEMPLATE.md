@@ -1,6 +1,6 @@
 <!--
 Commit messages must follow Conventional Commits (https://www.conventionalcommits.org).
-fix: ships a patch release, feat: a minor release, and a "!" or BREAKING CHANGE footer a major release.
+Breaking changes ("!" or a BREAKING CHANGE footer) are rejected.
 -->
 
 ### Issue # (if applicable)

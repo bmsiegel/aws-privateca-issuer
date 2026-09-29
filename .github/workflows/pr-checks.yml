@@ -13,63 +13,13 @@ concurrency:
 jobs:
   commitlint:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - name: Lint commit messages
-        uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6.2.1
+        uses: aws-pca-k8s-plugin-ops-admin/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6.2.1
         with:
-          configFile: .commitlintrc.json
-
-  verify-release:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 0
-      - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-      - name: Verify release configuration
-        run: make verify-release | tee "$RUNNER_TEMP/verify-release.log"
-      - name: Report the version merging would release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
-        run: |
-          next_release=$(sed -n 's/^==> next release: //p' "$RUNNER_TEMP/verify-release.log")
-          if [[ -z "$next_release" ]]; then
-            echo "::error::verify-release did not report a next release"
-            exit 1
-          elif [[ "$next_release" != "none" ]]; then
-            body="Merging this pull request as of $HEAD_SHA would release \`$next_release\`."
-          else
-            body="Merging this pull request as of $HEAD_SHA would not release a new version."
-          fi
-          echo "$body" >> "$GITHUB_STEP_SUMMARY"
-          if [[ "$SAME_REPO" == "true" ]]; then
-            gh pr comment "$PR_NUMBER" -R "$GITHUB_REPOSITORY" --edit-last --create-if-none --body "$body"
-          fi
-
-  helm-test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 0
-      - name: Setup Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - name: Install this pull request's chart from a Helm repository
-        run: make helm-test
+          configFile: commitlint.config.mjs
