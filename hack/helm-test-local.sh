@@ -25,7 +25,7 @@ docker build --build-arg pkg_version="$VERSION" --tag "$IMAGE_REPOSITORY:$VERSIO
 
 echo "==> packaging chart $VERSION"
 cp -r "$REPO_ROOT/charts/aws-pca-issuer" "$WORK/chart"
-sed -i "s#^  repository: .*#  repository: ${IMAGE_REPOSITORY}#" "$WORK/chart/values.yaml"
+"$REPO_ROOT/hack/set-chart-image-repository.sh" "$WORK/chart/values.yaml" "$IMAGE_REPOSITORY"
 mkdir "$WORK/repo"
 helm package "$WORK/chart" --version "$VERSION" --app-version "$VERSION" --destination "$WORK/repo"
 helm repo index "$WORK/repo" --url "$REPO_URL"

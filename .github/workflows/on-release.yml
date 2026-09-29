@@ -114,9 +114,14 @@ jobs:
             ${{ env.PRIVATE_REPOSITORY }}:latest
             ${{ env.PRIVATE_REPOSITORY }}:${{ env.VERSION }}
           push: true
-      - name: Point chart at published image
+      - name: Install yq
         run: |
-          sed -i "s#^  repository: .*#  repository: ${PUBLIC_REPOSITORY}#" charts/aws-pca-issuer/values.yaml
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -fsSL -o "$RUNNER_TEMP/bin/yq" https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          chmod +x "$RUNNER_TEMP/bin/yq"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Point chart at published image
+        run: hack/set-chart-image-repository.sh charts/aws-pca-issuer/values.yaml "$PUBLIC_REPOSITORY"
       - name: Publish Helm chart
         uses: aws-pca-k8s-plugin-ops-admin/helm-gh-pages@12f5926e622ccae035cf5a3bb8d67ae6db7dc4b7
         with:
