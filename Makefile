@@ -236,8 +236,8 @@ LOCAL_IMAGE := "localhost:${REGISTRY_PORT}/aws-privateca-issuer"
 NAMESPACE := aws-privateca-issuer
 SERVICE_ACCOUNT := ${NAMESPACE}-${ARCH}-sa
 TEST_KUBECONFIG_LOCATION := /tmp/pca_kubeconfig
-BETA_IMAGE_REPOSITORY ?= public.ecr.aws/cert-manager-aws-privateca-issuer/cert-manager-aws-privateca-issuer-test
-BETA_IMAGE_TAG ?= $(shell git describe --tags)
+PUBLISHED_CHART_REPOSITORY ?=
+PUBLISHED_CHART_VERSION ?=
 
 create-local-registry:
 	docker network create kind 2>/dev/null || true
@@ -298,8 +298,8 @@ setup-eks-webhook:
 .PHONY: install-eks-webhook
 install-eks-webhook: setup-eks-webhook upgrade-local
 
-.PHONY: install-eks-webhook-beta
-install-eks-webhook-beta: setup-eks-webhook upgrade-beta-ecr
+.PHONY: install-eks-webhook-published
+install-eks-webhook-published: setup-eks-webhook upgrade-published-chart
 
 .PHONY: kind-cluster-delete
 kind-cluster-delete:
@@ -323,14 +323,13 @@ install-local: docker-build docker-push-local
 	--set serviceAccount.create=false --set serviceAccount.name=${SERVICE_ACCOUNT} \
 	--set image.repository=${LOCAL_IMAGE} --set image.tag=latest --set image.pullPolicy=Always
 
-.PHONY: install-beta-ecr
-install-beta-ecr:
-	#install plugin from the beta public ECR repository
+.PHONY: install-published-chart
+install-published-chart:
+	#install plugin from a published Helm chart repository
+	test -n "${PUBLISHED_CHART_REPOSITORY}" -a -n "${PUBLISHED_CHART_VERSION}" || { echo "PUBLISHED_CHART_REPOSITORY and PUBLISHED_CHART_VERSION must be set"; exit 1; }
 	sleep 15
-	helm install issuer ./charts/aws-pca-issuer -n ${NAMESPACE} \
-	--set serviceAccount.create=false --set serviceAccount.name=${SERVICE_ACCOUNT} \
-	--set image.repository=${BETA_IMAGE_REPOSITORY} \
-	--set image.tag=${BETA_IMAGE_TAG} --set image.pullPolicy=Always
+	helm install issuer aws-privateca-issuer --repo ${PUBLISHED_CHART_REPOSITORY} --version ${PUBLISHED_CHART_VERSION} -n ${NAMESPACE} \
+	--set serviceAccount.create=false --set serviceAccount.name=${SERVICE_ACCOUNT}
 
 .PHONY: uninstall-local
 uninstall-local:
@@ -339,15 +338,15 @@ uninstall-local:
 .PHONY: upgrade-local
 upgrade-local: uninstall-local install-local
 
-.PHONY: upgrade-beta-ecr
-upgrade-beta-ecr: uninstall-local install-beta-ecr
+.PHONY: upgrade-published-chart
+upgrade-published-chart: uninstall-local install-published-chart
 
 #Sets up a kind cluster using the latest commit on the current branch
 .PHONY: cluster
 cluster: manager create-local-registry kind-cluster deploy-cert-manager install-local
 
-.PHONY: cluster-beta
-cluster-beta: manager kind-cluster deploy-cert-manager install-beta-ecr
+.PHONY: cluster-published
+cluster-published: manager kind-cluster deploy-cert-manager install-published-chart
 # ==================================
 # Download: tools in ${BIN}
 # ==================================

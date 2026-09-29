@@ -30,16 +30,16 @@ make create-local-registry
 make kind-cluster
 make deploy-cert-manager
 
-IMAGE_ARGS=()
-if [[ -n "${BETA_IMAGE_TAG:-}" ]]; then
-  IMAGE_ARGS=(--set image.repository="${BETA_IMAGE_REPOSITORY:?BETA_IMAGE_REPOSITORY must be set with BETA_IMAGE_TAG}" --set image.tag="$BETA_IMAGE_TAG")
+if [[ -n "${PUBLISHED_CHART_VERSION:-}" ]]; then
+  CHART=(aws-privateca-issuer --repo "${PUBLISHED_CHART_REPOSITORY:?PUBLISHED_CHART_REPOSITORY must be set with PUBLISHED_CHART_VERSION}" --version "$PUBLISHED_CHART_VERSION")
 else
   make docker-build
   make docker-push-local
+  CHART=(./charts/aws-pca-issuer --set image.repository=localhost:5000/aws-privateca-issuer --set image.tag=latest --set image.pullPolicy=Always)
 fi
 
 kubectl create secret tls -n aws-privateca-issuer cert --cert=iamra-cert.pem --key=iamra.key
 
 sleep 15
 
-helm install issuer ./charts/aws-pca-issuer -f replaced-values.yaml -n aws-privateca-issuer ${IMAGE_ARGS[@]+"${IMAGE_ARGS[@]}"}
+helm install issuer "${CHART[@]}" -f replaced-values.yaml -n aws-privateca-issuer

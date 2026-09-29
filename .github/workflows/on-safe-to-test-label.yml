@@ -6,11 +6,11 @@ on:
       architecture:
         required: true
         type: string
-      image_repository:
+      chart_repository:
         required: false
         type: string
         default: ''
-      image_tag:
+      chart_version:
         required: false
         type: string
         default: ''
@@ -83,10 +83,10 @@ jobs:
     permissions:
       contents: read
     env:
-      BETA_IMAGE_REPOSITORY: ${{ inputs.image_repository }}
-      BETA_IMAGE_TAG: ${{ inputs.image_tag }}
-      CLUSTER_TARGET: ${{ inputs.image_tag != '' && 'cluster-beta' || 'cluster' }}
-      EKS_WEBHOOK_TARGET: ${{ inputs.image_tag != '' && 'install-eks-webhook-beta' || 'install-eks-webhook' }}
+      PUBLISHED_CHART_REPOSITORY: ${{ inputs.chart_repository }}
+      PUBLISHED_CHART_VERSION: ${{ inputs.chart_version }}
+      CLUSTER_TARGET: ${{ inputs.chart_version != '' && 'cluster-published' || 'cluster' }}
+      EKS_WEBHOOK_TARGET: ${{ inputs.chart_version != '' && 'install-eks-webhook-published' || 'install-eks-webhook' }}
     steps:
       - name: Install Git
         run: sudo yum install git -y
@@ -164,6 +164,9 @@ jobs:
       - name: Install Helm
         run: |
           curl -sSL https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
+      - name: Wait for published chart
+        if: ${{ inputs.chart_version != '' }}
+        run: hack/wait-for-chart.sh "$PUBLISHED_CHART_REPOSITORY" "$PUBLISHED_CHART_VERSION"
       - name: Setup test environment
         run: |
           export PLUGIN_USER_NAME_OVERRIDE=K8sPluginUser-$E2E_STAGE-us-east-1
