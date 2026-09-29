@@ -39,13 +39,22 @@ git clone --quiet --bare "$REPO_ROOT" "$WORK/remote.git"
 git -C "$WORK/remote.git" update-ref refs/heads/main "$(git rev-parse HEAD)"
 git clone --quiet --branch main "$WORK/remote.git" "$WORK/repo"
 cp .releaserc.json "$WORK/repo/"
-(
+next_release=$(
   cd "$WORK/repo"
-  env -u GITHUB_ACTIONS -u GITHUB_TOKEN -u GH_TOKEN "$BIN/semantic-release" \
-    --dry-run --no-ci \
-    --repository-url "file://$WORK/remote.git" \
-    --plugins @semantic-release/commit-analyzer,@semantic-release/release-notes-generator
-) | tee "$WORK/semantic-release.log"
-grep -qE "The next release version is|There are no relevant changes" "$WORK/semantic-release.log"
+  env -u GITHUB_ACTIONS -u GITHUB_TOKEN -u GH_TOKEN node --input-type=module -e '
+    const { default: semanticRelease } = await import(process.argv[1]);
+    const result = await semanticRelease(
+      {
+        dryRun: true,
+        ci: false,
+        repositoryUrl: process.argv[2],
+        plugins: ["@semantic-release/commit-analyzer", "@semantic-release/release-notes-generator"],
+      },
+      { stdout: process.stderr, stderr: process.stderr },
+    );
+    console.log(result ? result.nextRelease.gitTag : "none");
+  ' "$WORK/node/node_modules/semantic-release/index.js" "file://$WORK/remote.git"
+)
+echo "==> next release: $next_release"
 
 echo "==> release config OK"
