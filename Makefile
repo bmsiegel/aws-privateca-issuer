@@ -238,6 +238,10 @@ SERVICE_ACCOUNT := ${NAMESPACE}-${ARCH}-sa
 TEST_KUBECONFIG_LOCATION := /tmp/pca_kubeconfig
 BETA_IMAGE_REPOSITORY ?= public.ecr.aws/cert-manager-aws-privateca-issuer/cert-manager-aws-privateca-issuer-test
 BETA_IMAGE_TAG ?= $(shell git describe --tags)
+CHART_REPOSITORY ?=
+CHART_VERSION ?=
+ISSUER_VALUES ?=
+INSTALL_ISSUER := $(if $(CHART_VERSION),install-chart,install-local)
 
 create-local-registry:
 	docker network create kind 2>/dev/null || true
@@ -296,7 +300,7 @@ setup-eks-webhook:
 	kubectl annotate serviceaccount ${SERVICE_ACCOUNT} -n ${NAMESPACE} eks.amazonaws.com/role-arn=$$OIDC_IAM_ROLE --kubeconfig=${TEST_KUBECONFIG_LOCATION}
 
 .PHONY: install-eks-webhook
-install-eks-webhook: setup-eks-webhook upgrade-local
+install-eks-webhook: setup-eks-webhook uninstall-local install-issuer
 
 .PHONY: install-eks-webhook-beta
 install-eks-webhook-beta: setup-eks-webhook upgrade-beta-ecr
@@ -321,7 +325,16 @@ install-local: docker-build docker-push-local
 	sleep 15
 	helm install issuer ./charts/aws-pca-issuer -n ${NAMESPACE} \
 	--set serviceAccount.create=false --set serviceAccount.name=${SERVICE_ACCOUNT} \
-	--set image.repository=${LOCAL_IMAGE} --set image.tag=latest --set image.pullPolicy=Always
+	--set image.repository=${LOCAL_IMAGE} --set image.tag=latest --set image.pullPolicy=Always $(if $(ISSUER_VALUES),-f $(ISSUER_VALUES))
+
+.PHONY: install-chart
+install-chart:
+	sleep 15
+	helm install issuer aws-privateca-issuer --repo ${CHART_REPOSITORY} --version ${CHART_VERSION} -n ${NAMESPACE} \
+	--set serviceAccount.create=false --set serviceAccount.name=${SERVICE_ACCOUNT} $(if $(ISSUER_VALUES),-f $(ISSUER_VALUES))
+
+.PHONY: install-issuer
+install-issuer: $(INSTALL_ISSUER)
 
 .PHONY: install-beta-ecr
 install-beta-ecr:
@@ -344,7 +357,7 @@ upgrade-beta-ecr: uninstall-local install-beta-ecr
 
 #Sets up a kind cluster using the latest commit on the current branch
 .PHONY: cluster
-cluster: manager create-local-registry kind-cluster deploy-cert-manager install-local
+cluster: manager create-local-registry kind-cluster deploy-cert-manager install-issuer
 
 .PHONY: cluster-beta
 cluster-beta: manager kind-cluster deploy-cert-manager install-beta-ecr

@@ -7,7 +7,7 @@ ATTEMPTS=${ATTEMPTS:-40}
 DELAY=${DELAY:-15}
 
 for ((i = 1; i <= ATTEMPTS; i++)); do
-  if curl -fsSL -H 'Cache-Control: no-cache' "$REPO_URL/index.yaml" | yq -e ".entries.aws-privateca-issuer[] | select(.version == \"$VERSION\")" >/dev/null 2>&1; then
+  if helm show chart aws-privateca-issuer --repo "$REPO_URL" --version "$VERSION" >/dev/null 2>&1; then
     echo "Found aws-privateca-issuer $VERSION in $REPO_URL"
     exit 0
   fi
