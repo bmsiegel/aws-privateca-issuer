@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-usage="usage: check-pmet-metrics.sh <function-name> <version> <arch> [region]"
+usage="usage: check-usage-metrics.sh <function-name> <version> <arch> [region]"
 FUNCTION_NAME=${1:?$usage}
 VERSION=${2:?$usage}
 ARCH=${3:?$usage}
@@ -46,15 +46,15 @@ for ((attempt = 1; attempt <= ATTEMPTS; attempt++)); do
   fi
   if jq -e '.found' "$result" >/dev/null; then
     jq . "$result"
-    echo "Found PMET metrics for $VERSION on $ARCH in $REGION"
+    echo "Found usage metrics for $VERSION on $ARCH in $REGION"
     exit 0
   fi
-  echo "Attempt $attempt/$ATTEMPTS: no PMET metrics yet for $VERSION on $ARCH in $REGION"
+  echo "Attempt $attempt/$ATTEMPTS: no usage metrics yet for $VERSION on $ARCH in $REGION"
   jq -c '.messages' "$result"
   if ((attempt < ATTEMPTS)); then
     sleep "$INTERVAL"
   fi
 done
 
-echo "No PMET metrics for $VERSION on $ARCH in $REGION after $ATTEMPTS attempts" >&2
+echo "No usage metrics for $VERSION on $ARCH in $REGION after $ATTEMPTS attempts" >&2
 exit 1

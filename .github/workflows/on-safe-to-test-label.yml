@@ -242,7 +242,7 @@ jobs:
           aws s3 cp --recursive logs-blog s3://aws-privateca-issuer-k8s-logs-${{ env.E2E_STAGE }}-us-east-1/${{ needs.start-runner.outputs.ec2-instance-id }}-blog/
 
   check-metrics:
-    name: Check PMET metrics for this version
+    name: Check usage metrics for this version
     needs: do-the-job
     if: ${{ inputs.chart_version != '' }}
     runs-on: ubuntu-latest
@@ -259,10 +259,10 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::${{ env.E2E_ACCOUNT }}:role/GithubActionsTestingRole-${{ env.E2E_STAGE }}-us-east-1
           aws-region: us-east-1
-      - name: Check PMET metrics were posted
+      - name: Check usage metrics were posted
         env:
           CHART_VERSION: ${{ inputs.chart_version }}
-        run: hack/check-pmet-metrics.sh "PmetMetricsLambda-$E2E_STAGE-us-east-1" "$CHART_VERSION" "$GO_ARCHITECTURE"
+        run: hack/check-usage-metrics.sh "UsageMetricsQueryLambda-$E2E_STAGE-us-east-1" "$CHART_VERSION" "$GO_ARCHITECTURE"
 
   stop-runner:
     name: Stop self-hosted EC2 runner
