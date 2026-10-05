@@ -239,6 +239,8 @@ LOCAL_IMAGE := "localhost:${REGISTRY_PORT}/aws-privateca-issuer"
 NAMESPACE := aws-privateca-issuer
 SERVICE_ACCOUNT := ${NAMESPACE}-${ARCH}-sa
 TEST_KUBECONFIG_LOCATION := /tmp/pca_kubeconfig
+BETA_IMAGE_REPOSITORY ?= public.ecr.aws/cert-manager-aws-privateca-issuer/cert-manager-aws-privateca-issuer-test
+BETA_IMAGE_TAG ?= $(shell git describe --tags)
 CHART_REPOSITORY ?=
 CHART_VERSION ?=
 ISSUER_VALUES ?=
@@ -303,6 +305,9 @@ setup-eks-webhook:
 .PHONY: install-eks-webhook
 install-eks-webhook: setup-eks-webhook uninstall-local install-issuer
 
+.PHONY: install-eks-webhook-beta
+install-eks-webhook-beta: setup-eks-webhook upgrade-beta-ecr
+
 .PHONY: kind-cluster-delete
 kind-cluster-delete:
 	${KIND} delete cluster --name ${K8S_CLUSTER_NAME}
@@ -335,13 +340,13 @@ install-chart:
 install-issuer: $(INSTALL_ISSUER)
 
 .PHONY: install-beta-ecr
-install-beta-ecr: 
-	#install plugin from local docker repo
+install-beta-ecr:
+	#install plugin from the beta public ECR repository
 	sleep 15
 	helm install issuer ./charts/aws-pca-issuer -n ${NAMESPACE} \
 	--set serviceAccount.create=false --set serviceAccount.name=${SERVICE_ACCOUNT} \
-	--set image.repository=public.ecr.aws/cert-manager-aws-privateca-issuer/cert-manager-aws-privateca-issuer-test \
-	--set image.tag=latest --set image.pullPolicy=Always
+	--set image.repository=${BETA_IMAGE_REPOSITORY} \
+	--set image.tag=${BETA_IMAGE_TAG} --set image.pullPolicy=Always
 
 .PHONY: uninstall-local
 uninstall-local:
@@ -349,6 +354,9 @@ uninstall-local:
 
 .PHONY: upgrade-local
 upgrade-local: uninstall-local install-local
+
+.PHONY: upgrade-beta-ecr
+upgrade-beta-ecr: uninstall-local install-beta-ecr
 
 #Sets up a kind cluster using the latest commit on the current branch
 .PHONY: cluster
