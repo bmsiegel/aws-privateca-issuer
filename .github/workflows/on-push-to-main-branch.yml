@@ -3,6 +3,7 @@ name: On Push to Main Branch
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 concurrency:
   group: main-release
